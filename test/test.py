@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import RisingEdge, Timer
 
 
 def lfsr_next(value):
@@ -19,9 +19,8 @@ async def test_lfsr(dut):
 
     dut._log.info("Starting LFSR test")
 
-    # 10 us clock
-    clock = Clock(dut.clk, 10, unit="us")
-    cocotb.start_soon(clock.start())
+    # Start clock
+    cocotb.start_soon(Clock(dut.clk, 10, unit="us").start())
 
     # -------------------------------------------------
     # RESET
@@ -31,40 +30,51 @@ async def test_lfsr(dut):
     dut.uio_in.value = 0
     dut.rst_n.value = 0
 
-    await ClockCycles(dut.clk, 5)
+    for _ in range(3):
+        await RisingEdge(dut.clk)
 
     dut.rst_n.value = 1
+    await Timer(1, unit="ns")
 
-    # Reset value should be 00000001
+    # Reset state should be 1
     assert dut.uo_out.value.integer == 1
 
     # -------------------------------------------------
     # LOAD SEED = 00000001
-    # uio_in[0] = 1
+    # uio_in[0] = LOAD
     # -------------------------------------------------
     dut.ui_in.value = 1
     dut.uio_in.value = 1
 
-    await ClockCycles(dut.clk, 1)
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
 
     assert dut.uo_out.value.integer == 1
 
     # -------------------------------------------------
     # ENABLE LFSR
-    # uio_in[1] = 1
+    # uio_in[1] = ENABLE
     # -------------------------------------------------
     dut.uio_in.value = 2
+    await Timer(1, unit="ns")
 
     expected = 1
 
-    # Check 10 consecutive LFSR states
+    # -------------------------------------------------
+    # Check 10 LFSR states
+    # -------------------------------------------------
     for _ in range(10):
 
         expected = lfsr_next(expected)
 
-        await ClockCycles(dut.clk, 1)
+        await RisingEdge(dut.clk)
+        await Timer(1, unit="ns")
 
         actual = dut.uo_out.value.integer
+
+        dut._log.info(
+            f"LFSR: expected={expected:08b}, actual={actual:08b}"
+        )
 
         assert actual == expected, (
             f"LFSR mismatch: expected {expected:08b}, "
